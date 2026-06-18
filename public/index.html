@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MOE Research Data Assistant</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">MOE</div>
+        <div>
+          <h1>Research Data Assistant</h1>
+          <p>Explore indexed education data with numbers, totals, and sources.</p>
+        </div>
+      </div>
+
+      <section class="panel status-panel">
+        <h2>Connection</h2>
+        <div id="configStatus" class="status muted">Checking configuration...</div>
+        <small id="indexName"></small>
+      </section>
+
+      <section class="panel">
+        <h2>Quick research prompts</h2>
+        <button class="chip" data-prompt="ما هو العدد الإجمالي للمدارس في البيانات؟">إجمالي المدارس</button>
+        <button class="chip" data-prompt="أعطني توزيع المدارس حسب المنطقة مع جدول واضح.">توزيع حسب المنطقة</button>
+        <button class="chip" data-prompt="احسب نسبة الطلاب الإناث من إجمالي الطلاب واذكر طريقة الحساب.">نسبة الإناث</button>
+        <button class="chip" data-prompt="رتّب المناطق حسب عدد الطلاب من الأعلى إلى الأدنى.">ترتيب المناطق</button>
+        <button class="chip" data-prompt="هل توجد قيم ناقصة أو مكررة في البيانات؟">جودة البيانات</button>
+      </section>
+
+      <section class="panel tips">
+        <h2>Best use</h2>
+        <ul>
+          <li>Ask for totals, percentages, comparisons, rankings.</li>
+          <li>Specify region, grade, year, or school type when needed.</li>
+          <li>For exact full-dataset numbers, use structured indexes or an aggregation API.</li>
+        </ul>
+      </section>
+    </aside>
+
+    <section class="chat-card">
+      <header class="chat-header">
+        <div>
+          <span class="eyebrow">MOE AI Assistant</span>
+          <h2>Ask a research question</h2>
+        </div>
+        <button id="clearChat" class="secondary-btn">Clear</button>
+      </header>
+
+      <div id="messages" class="messages">
+        <div class="message assistant">
+          <div class="avatar">AI</div>
+          <div class="bubble">
+            Hi. Ask me about MOE indexed data — totals, counts, percentages, comparisons, rankings, or Arabic research questions.
+          </div>
+        </div>
+      </div>
+
+      <div id="sources" class="sources hidden"></div>
+
+      <form id="chatForm" class="composer">
+        <textarea id="messageInput" rows="2" placeholder="Example: احسب العدد الإجمالي للطلاب حسب المنطقة واذكر المصدر..."></textarea>
+        <button id="sendButton" type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
