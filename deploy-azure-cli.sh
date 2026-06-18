@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="YOUR-UNIQUE-MOE-APP-NAME"
-RESOURCE_GROUP="moe-research-agent-rg"
-LOCATION="westeurope"
+APP_NAME="MOEgov"
+RESOURCE_GROUP="MOE"
+LOCATION="Sweden Central"
 SKU="B1"
 
-FOUNDRY_PROJECT_ENDPOINT="https://YOUR-RESOURCE.services.ai.azure.com/api/projects/YOUR-PROJECT"
-FOUNDRY_AGENT_NAME="YOUR-AGENT-NAME"
+FOUNDRY_PROJECT_ENDPOINT="https://moefoundry.services.ai.azure.com/api/projects/proj-default"
+FOUNDRY_AGENT_NAME="MOEAIassistant"
 
 az login
 
