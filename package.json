@@ -1,0 +1,20 @@
+{
+  "name": "moe-foundry-agent-app",
+  "version": "1.0.0",
+  "description": "MOE Research Data Assistant web app that calls an existing Microsoft Foundry Agent by agent name.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.5.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0"
+  }
+}
