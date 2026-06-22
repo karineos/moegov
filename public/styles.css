@@ -319,3 +319,7 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: wait; transform: none; }
   .message.user .avatar { grid-column: 1; }
   .message.user .bubble { grid-column: 2; justify-self: start; }
 }
+
+#indexName {
+  display: none !important;
+}
