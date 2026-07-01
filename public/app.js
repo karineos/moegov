@@ -22,12 +22,74 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 }
+function inlineMarkdown(value) {
+  return value
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function isTableSeparator(line) {
+  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+}
+
+function splitTableRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map(cell => inlineMarkdown(cell.trim()));
+}
 
 function renderMarkdownLite(text) {
-  let safe = escapeHtml(text);
-  safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  safe = safe.replace(/`([^`]+)`/g, '<code>$1</code>');
-  return safe;
+  const escaped = escapeHtml(text || '');
+  const lines = escaped.split('\n');
+  const output = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (
+      line.includes('|') &&
+      i + 1 < lines.length &&
+      isTableSeparator(lines[i + 1])
+    ) {
+      const headers = splitTableRow(line);
+      i += 2;
+
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      i--;
+
+      output.push(`
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${rows.map(row => `
+                <tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `);
+
+      continue;
+    }
+
+    if (line.trim() === '') {
+      output.push('<br>');
+    } else {
+      output.push(`<p>${inlineMarkdown(line)}</p>`);
+    }
+  }
+
+  return output.join('');
 }
 
 function addMessage(role, content) {
