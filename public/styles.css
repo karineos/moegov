@@ -323,3 +323,46 @@ button[type="submit"]:disabled { opacity: 0.6; cursor: wait; transform: none; }
 #indexName {
   display: none !important;
 }
+
+.bubble p {
+  margin: 0 0 12px;
+}
+
+.bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 14px 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.bubble table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.bubble th,
+.bubble td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.bubble th {
+  background: #f6fbfb;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.bubble tr:last-child td {
+  border-bottom: 0;
+}
