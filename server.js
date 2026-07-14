@@ -1,195 +1,233 @@
-import 'dotenv/config';
-import express from 'express';
-import helmet from 'helmet';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { DefaultAzureCredential } from '@azure/identity';
+import "dotenv/config";
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import { ClientSecretCredential } from "@azure/identity";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+
+app.use(express.json({ limit: "2mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+
 const PORT = process.env.PORT || 8080;
-const APP_TITLE = process.env.APP_TITLE || 'MOE Research Data Assistant';
-const FOUNDRY_PROJECT_ENDPOINT = normalizeEndpoint(process.env.FOUNDRY_PROJECT_ENDPOINT);
-const FOUNDRY_AGENT_NAME = process.env.FOUNDRY_AGENT_NAME;
-const FOUNDRY_AGENT_VERSION = process.env.FOUNDRY_AGENT_VERSION;
 
-const credential = new DefaultAzureCredential();
+const requiredEnv = [
+  "FABRIC_TENANT_ID",
+  "FABRIC_CLIENT_ID",
+  "FABRIC_CLIENT_SECRET",
+  "FABRIC_MCP_ENDPOINT"
+];
 
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(express.json({ limit: '1mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+function getMissingEnv() {
+  return requiredEnv.filter((key) => !process.env[key]);
+}
 
-const hits = new Map();
-function rateLimit(req, res, next) {
-  const key = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-  const now = Date.now();
-  const windowMs = 60 * 1000;
-  const limit = 30;
-  const entry = hits.get(key) || { count: 0, reset: now + windowMs };
-  if (now > entry.reset) {
-    entry.count = 0;
-    entry.reset = now + windowMs;
+function isConfigured() {
+  return getMissingEnv().length === 0;
+}
+
+let cachedToken = null;
+
+async function getFabricToken() {
+  if (!isConfigured()) {
+    throw new Error(`Missing environment variables: ${getMissingEnv().join(", ")}`);
   }
-  entry.count += 1;
-  hits.set(key, entry);
-  if (entry.count > limit) {
-    return res.status(429).json({ error: 'Too many requests. Please wait a minute and try again.' });
+
+  if (
+    cachedToken &&
+    cachedToken.token &&
+    cachedToken.expiresOnTimestamp &&
+    cachedToken.expiresOnTimestamp > Date.now() + 120000
+  ) {
+    return cachedToken.token;
   }
-  next();
+
+  const credential = new ClientSecretCredential(
+    process.env.FABRIC_TENANT_ID,
+    process.env.FABRIC_CLIENT_ID,
+    process.env.FABRIC_CLIENT_SECRET
+  );
+
+  const scope =
+    process.env.FABRIC_TOKEN_SCOPE || "https://api.fabric.microsoft.com/.default";
+
+  cachedToken = await credential.getToken(scope);
+  return cachedToken.token;
 }
 
-function normalizeEndpoint(endpoint) {
-  return endpoint?.replace(/\/+$/, '');
-}
+function pickToolArgument(tool, userQuestion) {
+  const schema = tool?.inputSchema || {};
+  const properties = schema.properties || {};
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const keys = Object.keys(properties);
 
-function configured() {
-  return Boolean(FOUNDRY_PROJECT_ENDPOINT && FOUNDRY_AGENT_NAME);
-}
+  const possibleNames = [
+    "question",
+    "query",
+    "input",
+    "prompt",
+    "message",
+    "text",
+    "userQuestion",
+    "user_query"
+  ];
 
-async function getFoundryToken() {
-  const token = await credential.getToken('https://ai.azure.com/.default');
-  if (!token?.token) throw new Error('Could not get Microsoft Entra token for Foundry. Check App Service Managed Identity and RBAC permissions.');
-  return token.token;
-}
-
-function buildAgentReference() {
-  const agentReference = {
-    name: FOUNDRY_AGENT_NAME,
-    type: 'agent_reference'
-  };
-  if (FOUNDRY_AGENT_VERSION) {
-    agentReference.version = FOUNDRY_AGENT_VERSION;
-  }
-  return agentReference;
-}
-
-function extractText(data) {
-  if (typeof data?.output_text === 'string' && data.output_text.trim()) return data.output_text;
-
-  const parts = [];
-  for (const item of data?.output || []) {
-    for (const content of item?.content || []) {
-      if (typeof content?.text === 'string') parts.push(content.text);
-      if (typeof content?.value === 'string') parts.push(content.value);
+  for (const name of possibleNames) {
+    if (keys.includes(name)) {
+      return { [name]: userQuestion };
     }
   }
 
-  if (parts.length) return parts.join('\n\n');
-  return JSON.stringify(data, null, 2);
+  for (const name of required) {
+    const field = properties[name];
+    if (!field || field.type === "string") {
+      return { [name]: userQuestion };
+    }
+  }
+
+  for (const name of keys) {
+    const field = properties[name];
+    if (!field || field.type === "string") {
+      return { [name]: userQuestion };
+    }
+  }
+
+  return { question: userQuestion };
 }
 
-function extractCitations(data) {
-  const citations = [];
-  for (const item of data?.output || []) {
-    for (const content of item?.content || []) {
-      for (const ann of content?.annotations || []) {
-        const title = ann.title || ann.filepath || ann.url || ann.text || 'Citation';
-        citations.push({
-          number: citations.length + 1,
-          title,
-          url: ann.url || '',
-          filepath: ann.filepath || '',
-          content: ann.text || ann.quote || ''
-        });
+function extractAnswerText(result) {
+  if (!result) return "No response returned from the Fabric Data Agent.";
+
+  if (result.isError) {
+    const errorText = extractAnswerText({ content: result.content });
+    throw new Error(errorText || "Fabric Data Agent returned an error.");
+  }
+
+  if (Array.isArray(result.content)) {
+    const textParts = result.content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part?.type === "text" && part?.text) return part.text;
+        if (part?.text) return part.text;
+        if (part?.content) return JSON.stringify(part.content, null, 2);
+        return "";
+      })
+      .filter(Boolean);
+
+    if (textParts.length > 0) {
+      return textParts.join("\n\n");
+    }
+  }
+
+  if (typeof result.structuredContent === "string") {
+    return result.structuredContent;
+  }
+
+  if (result.structuredContent) {
+    return JSON.stringify(result.structuredContent, null, 2);
+  }
+
+  return JSON.stringify(result, null, 2);
+}
+
+async function askFabricDataAgent(userQuestion) {
+  const token = await getFabricToken();
+
+  const client = new Client({
+    name: "moe-public-web-app",
+    version: "1.0.0"
+  });
+
+  const transport = new StreamableHTTPClientTransport(
+    new URL(process.env.FABRIC_MCP_ENDPOINT),
+    {
+      requestInit: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
       }
     }
+  );
+
+  try {
+    await client.connect(transport);
+
+    const toolsResponse = await client.listTools();
+    const tools = toolsResponse?.tools || [];
+
+    if (!tools.length) {
+      throw new Error("No tools were returned by the Fabric Data Agent MCP server.");
+    }
+
+    const tool = tools[0];
+    const args = pickToolArgument(tool, userQuestion);
+
+    const result = await client.callTool({
+      name: tool.name,
+      arguments: args
+    });
+
+    return {
+      answer: extractAnswerText(result),
+      toolName: tool.name
+    };
+  } finally {
+    try {
+      await client.close();
+    } catch {
+      // Ignore close error
+    }
   }
-  return citations.slice(0, 10);
 }
 
-app.get('/api/config', (_req, res) => {
+app.get("/api/health", (req, res) => {
   res.json({
-    appTitle: APP_TITLE,
-    configured: configured(),
-    searchIndex: FOUNDRY_AGENT_NAME || null,
-    queryType: 'Foundry Agent'
+    ok: true,
+    configured: isConfigured(),
+    missing: getMissingEnv(),
+    provider: "Microsoft Fabric Data Agent",
+    endpointConfigured: Boolean(process.env.FABRIC_MCP_ENDPOINT)
   });
 });
 
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, configured: configured(), appTitle: APP_TITLE });
-});
-
-app.post('/api/chat', rateLimit, async (req, res) => {
+app.post("/api/chat", async (req, res) => {
   try {
-    if (!configured()) {
-      return res.status(500).json({
-        error: 'The app is not configured yet. Add FOUNDRY_PROJECT_ENDPOINT and FOUNDRY_AGENT_NAME in App Service > Configuration.'
+    const message = req.body?.message || req.body?.input || req.body?.question;
+
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({
+        error: "Missing message."
       });
     }
 
-    const userMessage = String(req.body?.message || '').trim();
-    if (!userMessage) {
-      return res.status(400).json({ error: 'Message is required.' });
-    }
-
-    const conversationId = req.body?.conversationId || null;
-    const token = await getFoundryToken();
-
-    let activeConversationId = conversationId;
-    if (!activeConversationId) {
-      const convRes = await fetch(`${FOUNDRY_PROJECT_ENDPOINT}/openai/v1/conversations`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({})
-      });
-      const convRaw = await convRes.text();
-      const convData = JSON.parse(convRaw || '{}');
-      if (!convRes.ok) {
-        return res.status(convRes.status).json({ error: convData?.error?.message || 'Failed to create Foundry conversation.', details: convData });
-      }
-      activeConversationId = convData.id;
-    }
-
-    const responseRes = await fetch(`${FOUNDRY_PROJECT_ENDPOINT}/openai/v1/responses`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        input: userMessage,
-        conversation: activeConversationId,
-        agent_reference: buildAgentReference()
-      })
-    });
-
-    const raw = await responseRes.text();
-    let data;
-    try {
-      data = JSON.parse(raw || '{}');
-    } catch {
-      data = { raw };
-    }
-
-    if (!responseRes.ok) {
-      console.error('Foundry response error:', JSON.stringify(data, null, 2));
-      return res.status(responseRes.status).json({
-        error: data?.error?.message || 'Foundry agent request failed.',
-        details: data?.error || data
-      });
-    }
+    const result = await askFabricDataAgent(message);
 
     res.json({
-      answer: extractText(data),
-      citations: extractCitations(data),
-      conversationId: activeConversationId
+      answer: result.answer,
+      sources: [],
+      provider: "Microsoft Fabric Data Agent",
+      tool: result.toolName
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: error.message || 'Unexpected server error.' });
+    console.error("Fabric Data Agent error:", error);
+
+    res.status(500).json({
+      error: "The Fabric Data Agent request failed.",
+      details: error.message
+    });
   }
 });
 
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 app.listen(PORT, () => {
-  console.log(`${APP_TITLE} running on port ${PORT}`);
+  console.log(`MOE Fabric Data Agent app running on port ${PORT}`);
 });
