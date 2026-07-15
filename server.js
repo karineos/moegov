@@ -16,6 +16,9 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const PORT = process.env.PORT || 8080;
 
+const MCP_LIST_TOOLS_TIMEOUT_MS = Number(process.env.MCP_LIST_TOOLS_TIMEOUT_MS || 90000);
+const MCP_CALL_TIMEOUT_MS = Number(process.env.MCP_CALL_TIMEOUT_MS || 220000);
+
 const requiredEnv = [
   "FABRIC_TENANT_ID",
   "FABRIC_CLIENT_ID",
@@ -31,7 +34,13 @@ function isConfigured() {
   return getMissingEnv().length === 0;
 }
 
+function logStep(step, startTime) {
+  const elapsed = Date.now() - startTime;
+  console.log(`[Fabric MCP] ${step} after ${elapsed}ms`);
+}
+
 let cachedToken = null;
+let cachedTool = null;
 
 async function getFabricToken() {
   if (!isConfigured()) {
@@ -135,8 +144,61 @@ function extractAnswerText(result) {
   return JSON.stringify(result, null, 2);
 }
 
+async function getFabricTool(client) {
+  if (cachedTool) {
+    return cachedTool;
+  }
+
+  const toolsResponse = await client.listTools(
+    {},
+    {
+      timeout: MCP_LIST_TOOLS_TIMEOUT_MS
+    }
+  );
+
+  const tools = toolsResponse?.tools || [];
+
+  if (!tools.length) {
+    throw new Error("No tools were returned by the Fabric Data Agent MCP server.");
+  }
+
+  cachedTool = tools[0];
+
+  console.log("[Fabric MCP] Using tool:", cachedTool.name);
+  return cachedTool;
+}
+
+async function callFabricTool(client, tool, args) {
+  try {
+    return await client.callTool(
+      {
+        name: tool.name,
+        arguments: args
+      },
+      {
+        timeout: MCP_CALL_TIMEOUT_MS
+      }
+    );
+  } catch (error) {
+    const message = String(error?.message || error);
+
+    if (message.includes("-32001") || message.toLowerCase().includes("timed out")) {
+      throw new Error(
+        `Fabric MCP request timed out after ${MCP_CALL_TIMEOUT_MS}ms. The Data Agent/semantic model query is taking too long.`
+      );
+    }
+
+    throw error;
+  }
+}
+
 async function askFabricDataAgent(userQuestion) {
+  const startedAt = Date.now();
+
+  logStep("starting request", startedAt);
+
   const token = await getFabricToken();
+  logStep("token acquired", startedAt);
 
   const client = new Client({
     name: "moe-public-web-app",
@@ -157,21 +219,16 @@ async function askFabricDataAgent(userQuestion) {
 
   try {
     await client.connect(transport);
+    logStep("connected to MCP server", startedAt);
 
-    const toolsResponse = await client.listTools();
-    const tools = toolsResponse?.tools || [];
+    const tool = await getFabricTool(client);
+    logStep("tool ready", startedAt);
 
-    if (!tools.length) {
-      throw new Error("No tools were returned by the Fabric Data Agent MCP server.");
-    }
-
-    const tool = tools[0];
     const args = pickToolArgument(tool, userQuestion);
+    console.log("[Fabric MCP] Tool args:", args);
 
-    const result = await client.callTool({
-      name: tool.name,
-      arguments: args
-    });
+    const result = await callFabricTool(client, tool, args);
+    logStep("tool call completed", startedAt);
 
     return {
       answer: extractAnswerText(result),
@@ -196,6 +253,21 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+app.get("/api/debug-config", (req, res) => {
+  res.json({
+    provider: "Microsoft Fabric Data Agent",
+    configured: isConfigured(),
+    missing: getMissingEnv(),
+    hasTenantId: Boolean(process.env.FABRIC_TENANT_ID),
+    hasClientId: Boolean(process.env.FABRIC_CLIENT_ID),
+    hasClientSecret: Boolean(process.env.FABRIC_CLIENT_SECRET),
+    endpoint: process.env.FABRIC_MCP_ENDPOINT,
+    tokenScope: process.env.FABRIC_TOKEN_SCOPE || "https://api.fabric.microsoft.com/.default",
+    listToolsTimeoutMs: MCP_LIST_TOOLS_TIMEOUT_MS,
+    callTimeoutMs: MCP_CALL_TIMEOUT_MS
+  });
+});
+
 app.post("/api/chat", async (req, res) => {
   try {
     const message = req.body?.message || req.body?.input || req.body?.question;
@@ -217,9 +289,17 @@ app.post("/api/chat", async (req, res) => {
   } catch (error) {
     console.error("Fabric Data Agent error:", error);
 
-    res.status(500).json({
+    const message = String(error?.message || "");
+
+    const status =
+      message.toLowerCase().includes("timed out") ||
+      message.includes("-32001")
+        ? 504
+        : 500;
+
+    res.status(status).json({
       error: "The Fabric Data Agent request failed.",
-      details: error.message
+      details: message
     });
   }
 });
@@ -230,4 +310,6 @@ app.get("*", (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`MOE Fabric Data Agent app running on port ${PORT}`);
+  console.log(`MCP list tools timeout: ${MCP_LIST_TOOLS_TIMEOUT_MS}ms`);
+  console.log(`MCP call timeout: ${MCP_CALL_TIMEOUT_MS}ms`);
 });
