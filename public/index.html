@@ -1,58 +1,146 @@
-<!doctype html>
-<html lang="en" dir="ltr">
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>MOE Research Assistant</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MOE Research Data Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <main class="page">
-    <header class="brand-header">
-      <button id="clearChat" class="clear-btn" type="button">Clear</button>
+  <div class="page-bg"></div>
 
-      <div class="logo-frame">
-        <img class="brand-logo" src="/logo.png" alt="MOE Logo" onerror="this.onerror=null;this.src='/logo-placeholder.svg';" />
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-card">
+        <div class="brand-logo-wrap">
+          <img src="/logo.png" alt="MOE Logo" class="brand-logo" />
+        </div>
+        <div class="brand-text">
+          <span class="eyebrow">MOE AI Platform</span>
+          <h1>Research Data Assistant</h1>
+          <p>
+            Ask research questions, compare indicators, calculate totals, and explore education datasets with clear, elegant outputs.
+          </p>
+        </div>
       </div>
 
-      <div class="brand-copy">
-        <p class="kicker">MOE AI ASSISTANT</p>
-        <h1>Research Data Assistant</h1>
-        <p class="subtitle">Ask beautiful, source-backed questions across your indexed education data.</p>
-      </div>
-
-      <div class="connection-line">
-        <div id="configStatus" class="status muted">Checking...</div>
-        <small id="indexName"></small>
-      </div>
-    </header>
-
-    <section class="assistant-card">
-      <div class="prompt-strip">
-        <button class="chip" data-prompt="ما هو العدد الإجمالي للمدارس في البيانات؟">إجمالي المدارس</button>
-        <button class="chip" data-prompt="أعطني توزيع المدارس حسب المنطقة مع جدول واضح.">توزيع المنطقة</button>
-        <button class="chip" data-prompt="احسب نسبة الطلاب الإناث من إجمالي الطلاب واذكر طريقة الحساب.">نسبة الإناث</button>
-        <button class="chip" data-prompt="رتّب المناطق حسب عدد الطلاب من الأعلى إلى الأدنى.">ترتيب المناطق</button>
-        <button class="chip" data-prompt="هل توجد قيم ناقصة أو مكررة في البيانات؟">جودة البيانات</button>
-      </div>
-
-      <div id="messages" class="messages">
-        <div class="message assistant">
-          <div class="avatar">AI</div>
-          <div class="bubble">
-            Hi, I’m ready. Ask me about totals, counts, percentages, comparisons, rankings, or Arabic research questions.
+      <div class="side-section glass-card">
+        <div class="section-title-row">
+          <h3>Connection</h3>
+          <span id="healthBadge" class="status-badge loading">Checking...</span>
+        </div>
+        <div class="mini-meta">
+          <div>
+            <span class="mini-label">Provider</span>
+            <span class="mini-value">Fabric Data Agent</span>
+          </div>
+          <div>
+            <span class="mini-label">Mode</span>
+            <span class="mini-value">Public Research Assistant</span>
           </div>
         </div>
       </div>
 
-      <div id="sources" class="sources hidden"></div>
+      <div class="side-section glass-card">
+        <div class="section-title-row">
+          <h3>Quick Prompts</h3>
+        </div>
+        <div class="prompt-list">
+          <button class="prompt-chip">ما هو إجمالي عدد الطلاب؟</button>
+          <button class="prompt-chip">رتّب المناطق حسب عدد الطلاب من الأعلى إلى الأدنى.</button>
+          <button class="prompt-chip">احسب نسبة كل منطقة من إجمالي عدد الطلاب.</button>
+          <button class="prompt-chip">ما هو متوسط عدد الطلاب لكل مدرسة؟</button>
+          <button class="prompt-chip">قارن بين عدد الذكور والإناث.</button>
+          <button class="prompt-chip">ما هو إجمالي عدد المعلمين؟</button>
+        </div>
+      </div>
 
-      <form id="chatForm" class="composer">
-        <textarea id="messageInput" rows="1" placeholder="Ask anything… مثال: احسب العدد الإجمالي للطلاب حسب المنطقة"></textarea>
-        <button id="sendButton" type="submit" aria-label="Send message">Send</button>
-      </form>
-    </section>
-  </main>
+      <div class="side-section glass-card">
+        <div class="section-title-row">
+          <h3>Best Use</h3>
+        </div>
+        <ul class="info-list">
+          <li>Totals, rankings, percentages, and comparisons</li>
+          <li>Tables, breakdowns, and regional analysis</li>
+          <li>Arabic and English research questions</li>
+          <li>Source-backed answers and structured insights</li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="main-panel">
+      <header class="hero glass-card">
+        <div class="hero-top">
+          <div class="hero-badge">MOE Research Workspace</div>
+          <button id="clearBtn" class="ghost-btn">Clear chat</button>
+        </div>
+
+        <div class="hero-center-logo">
+          <img src="/logo.png" alt="MOE Logo" class="hero-logo" />
+        </div>
+
+        <h2>Explore education data beautifully</h2>
+        <p>
+          Ask the assistant anything about the indexed MOE data. It can return summaries, rankings, calculations, and well-formatted tables.
+        </p>
+
+        <div class="hero-stats">
+          <div class="stat-card">
+            <span class="stat-label">Answers</span>
+            <span class="stat-value">Structured</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Languages</span>
+            <span class="stat-value">Arabic + English</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Best for</span>
+            <span class="stat-value">Research & Numbers</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="chat-card glass-card">
+        <div class="chat-header">
+          <div>
+            <span class="small-label">Live Assistant</span>
+            <h3>Ask a research question</h3>
+          </div>
+        </div>
+
+        <div id="chatMessages" class="chat-messages">
+          <div class="message-row assistant">
+            <div class="avatar assistant-avatar">AI</div>
+            <div class="message-bubble assistant-bubble">
+              <div class="message-content">
+                <p>Hello, I’m ready.</p>
+                <p>Ask about totals, percentages, student counts, regional rankings, school indicators, or comparisons across the available MOE datasets.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-input-wrap">
+          <div class="input-inner">
+            <textarea
+              id="messageInput"
+              rows="1"
+              placeholder="Ask in Arabic or English… مثال: رتّب المناطق حسب عدد الطلاب من الأعلى إلى الأدنى"
+            ></textarea>
+            <button id="sendBtn" class="send-btn">
+              <span>Send</span>
+            </button>
+          </div>
+          <div class="input-hint">
+            Press <strong>Enter</strong> to send • <strong>Shift + Enter</strong> for a new line
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script src="/app.js"></script>
 </body>

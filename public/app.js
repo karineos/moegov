@@ -1,219 +1,359 @@
-const messagesEl = document.getElementById('messages');
-const form = document.getElementById('chatForm');
-const input = document.getElementById('messageInput');
-const sendButton = document.getElementById('sendButton');
-const sourcesEl = document.getElementById('sources');
-const clearChat = document.getElementById('clearChat');
-const configStatus = document.getElementById('configStatus');
-const indexName = document.getElementById('indexName');
+const chatMessages = document.getElementById("chatMessages");
+const messageInput = document.getElementById("messageInput");
+const sendBtn = document.getElementById("sendBtn");
+const clearBtn = document.getElementById("clearBtn");
+const healthBadge = document.getElementById("healthBadge");
+const promptButtons = document.querySelectorAll(".prompt-chip");
 
-let history = JSON.parse(localStorage.getItem('moe-chat-history') || '[]');
-let conversationId = localStorage.getItem('moe-conversation-id') || null;
+let isSending = false;
 
-function saveHistory() {
-  localStorage.setItem('moe-chat-history', JSON.stringify(history.slice(-12)));
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-}
-function inlineMarkdown(value) {
-  return value
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
+function isArabic(text) {
+  return /[\u0600-\u06FF]/.test(text);
 }
 
-function isTableSeparator(line) {
-  return /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(line);
+function autoResizeTextarea() {
+  messageInput.style.height = "auto";
+  messageInput.style.height = `${Math.min(messageInput.scrollHeight, 180)}px`;
 }
 
-function splitTableRow(line) {
-  return line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map(cell => inlineMarkdown(cell.trim()));
+function scrollToBottom() {
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function renderMarkdownLite(text) {
-  const escaped = escapeHtml(text || '');
-  const lines = escaped.split('\n');
-  const output = [];
+function createMessageRow(role, html, opts = {}) {
+  const row = document.createElement("div");
+  row.className = `message-row ${role}`;
 
-  for (let i = 0; i < lines.length; i++) {
+  const isUser = role === "user";
+  const avatar = document.createElement("div");
+  avatar.className = `avatar ${isUser ? "user-avatar" : "assistant-avatar"}`;
+  avatar.textContent = isUser ? "You" : "AI";
+
+  const bubble = document.createElement("div");
+  bubble.className = `message-bubble ${isUser ? "user-bubble" : "assistant-bubble"}`;
+
+  const content = document.createElement("div");
+  content.className = "message-content";
+
+  if (opts.rtl) {
+    content.classList.add("is-rtl");
+  }
+
+  content.innerHTML = html;
+  bubble.appendChild(content);
+
+  if (opts.meta) {
+    const meta = document.createElement("div");
+    meta.className = "message-meta";
+    meta.textContent = opts.meta;
+    bubble.appendChild(meta);
+  }
+
+  row.appendChild(avatar);
+  row.appendChild(bubble);
+
+  return row;
+}
+
+function renderTypingIndicator() {
+  return `
+    <div class="typing">
+      <span></span><span></span><span></span>
+    </div>
+  `;
+}
+
+function parseMarkdownTable(lines) {
+  if (lines.length < 2) return null;
+
+  const header = lines[0];
+  const divider = lines[1];
+
+  if (!header.includes("|")) return null;
+  if (!/^[:\-\|\s]+$/.test(divider.trim())) return null;
+
+  const parseRow = (line) =>
+    line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
+      .split("|")
+      .map((cell) => cell.trim());
+
+  const headers = parseRow(header);
+  const bodyLines = lines.slice(2).filter((line) => line.trim() && line.includes("|"));
+  const rows = bodyLines.map(parseRow);
+
+  if (!headers.length || !rows.length) return null;
+
+  return { headers, rows };
+}
+
+function buildTableHtml(table, rtl = false) {
+  const headerHtml = table.headers
+    .map((h) => `<th>${escapeHtml(h)}</th>`)
+    .join("");
+
+  const rowsHtml = table.rows
+    .map(
+      (row) =>
+        `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`
+    )
+    .join("");
+
+  return `
+    <div class="rendered-table-wrap ${rtl ? "is-rtl" : ""}">
+      <div class="rendered-table-scroll">
+        <table class="rendered-table">
+          <thead><tr>${headerHtml}</tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function formatInline(text) {
+  let html = escapeHtml(text);
+
+  html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  return html;
+}
+
+function formatStructuredText(rawText) {
+  const text = String(rawText || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "<p>No answer returned.</p>";
+
+  const rtl = isArabic(text);
+  const blocks = [];
+  const lines = text.split("\n");
+
+  let i = 0;
+  while (i < lines.length) {
     const line = lines[i];
 
-    if (
-      line.includes('|') &&
-      i + 1 < lines.length &&
-      isTableSeparator(lines[i + 1])
-    ) {
-      const headers = splitTableRow(line);
-      i += 2;
-
-      const rows = [];
-      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
-        rows.push(splitTableRow(lines[i]));
+    // fenced code block
+    if (line.trim().startsWith("```")) {
+      let codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
         i++;
       }
-      i--;
-
-      output.push(`
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
-            </thead>
-            <tbody>
-              ${rows.map(row => `
-                <tr>${row.map(cell => `<td>${cell}</td>`).join('')}</tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      `);
-
+      blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      i++;
       continue;
     }
 
-    if (line.trim() === '') {
-      output.push('<br>');
+    // markdown table
+    if (
+      i + 1 < lines.length &&
+      lines[i].includes("|") &&
+      /^[:\-\|\s]+$/.test(lines[i + 1].trim())
+    ) {
+      const tableLines = [lines[i], lines[i + 1]];
+      i += 2;
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      const parsed = parseMarkdownTable(tableLines);
+      if (parsed) {
+        blocks.push(buildTableHtml(parsed, rtl));
+        continue;
+      }
+    }
+
+    // bullet list
+    if (/^[-*]\s+/.test(line.trim())) {
+      const items = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        `<ul>${items.map((item) => `<li>${formatInline(item)}</li>`).join("")}</ul>`
+      );
+      continue;
+    }
+
+    // numbered list
+    if (/^\d+\.\s+/.test(line.trim())) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        `<ol>${items.map((item) => `<li>${formatInline(item)}</li>`).join("")}</ol>`
+      );
+      continue;
+    }
+
+    // plain paragraphs
+    if (line.trim() === "") {
+      i++;
+      continue;
+    }
+
+    let paragraphLines = [line];
+    i++;
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      !lines[i].includes("|") &&
+      !/^[-*]\s+/.test(lines[i].trim()) &&
+      !/^\d+\.\s+/.test(lines[i].trim()) &&
+      !lines[i].trim().startsWith("```")
+    ) {
+      paragraphLines.push(lines[i]);
+      i++;
+    }
+
+    blocks.push(`<p>${formatInline(paragraphLines.join(" "))}</p>`);
+  }
+
+  return `<div class="${rtl ? "is-rtl" : ""}">${blocks.join("")}</div>`;
+}
+
+function addUserMessage(text) {
+  const html = `<p>${escapeHtml(text)}</p>`;
+  const row = createMessageRow("user", html, { rtl: isArabic(text) });
+  chatMessages.appendChild(row);
+  scrollToBottom();
+}
+
+function addAssistantMessage(rawText, meta = "") {
+  const html = formatStructuredText(rawText);
+  const row = createMessageRow("assistant", html, {
+    rtl: isArabic(rawText),
+    meta
+  });
+  chatMessages.appendChild(row);
+  scrollToBottom();
+}
+
+function addTypingMessage() {
+  const row = createMessageRow("assistant", renderTypingIndicator());
+  row.id = "typingRow";
+  chatMessages.appendChild(row);
+  scrollToBottom();
+}
+
+function removeTypingMessage() {
+  const typingRow = document.getElementById("typingRow");
+  if (typingRow) typingRow.remove();
+}
+
+async function checkHealth() {
+  try {
+    const res = await fetch("/api/health");
+    const data = await res.json();
+
+    if (data.ok && data.configured) {
+      healthBadge.textContent = "Connected";
+      healthBadge.className = "status-badge connected";
     } else {
-      output.push(`<p>${inlineMarkdown(line)}</p>`);
+      healthBadge.textContent = "Not configured";
+      healthBadge.className = "status-badge error";
     }
-  }
-
-  return output.join('');
-}
-
-function addMessage(role, content) {
-  const row = document.createElement('div');
-  row.className = `message ${role}`;
-
-  const avatar = document.createElement('div');
-  avatar.className = 'avatar';
-  avatar.textContent = role === 'user' ? 'You' : 'AI';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  bubble.innerHTML = renderMarkdownLite(content);
-
-  if (role === 'user') {
-    row.appendChild(bubble);
-    row.appendChild(avatar);
-  } else {
-    row.appendChild(avatar);
-    row.appendChild(bubble);
-  }
-
-  messagesEl.appendChild(row);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
-  return bubble;
-}
-
-function renderSources(citations = []) {
-  if (!citations.length) {
-    sourcesEl.classList.add('hidden');
-    sourcesEl.innerHTML = '';
-    return;
-  }
-
-  sourcesEl.classList.remove('hidden');
-  sourcesEl.innerHTML = '<h3>Retrieved sources</h3>' + citations.map((c) => `
-    <div class="source-item">
-      <strong>${c.number}. ${escapeHtml(c.title || 'Source')}</strong>
-      ${c.filepath ? `<p>File: ${escapeHtml(c.filepath)}</p>` : ''}
-      ${c.url ? `<p>URL: ${escapeHtml(c.url)}</p>` : ''}
-      ${c.content ? `<p>${escapeHtml(c.content)}</p>` : ''}
-    </div>
-  `).join('');
-}
-
-async function loadConfig() {
-  try {
-    const res = await fetch('/api/config');
-    const data = await res.json();
-    configStatus.className = data.configured ? 'status good' : 'status bad';
-    configStatus.textContent = data.configured ? 'Connected' : 'Missing settings';
-    indexName.textContent = data.searchIndex ? `Index: ${data.searchIndex} · Query: ${data.queryType}` : 'Configure App Service settings first.';
-  } catch {
-    configStatus.className = 'status bad';
-    configStatus.textContent = 'Server unavailable';
-  }
-}
-
-async function sendMessage(message) {
-  addMessage('user', message);
-  const thinking = addMessage('assistant', 'Searching MOE data...');
-  sendButton.disabled = true;
-  input.disabled = true;
-  renderSources([]);
-
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history, conversationId })
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || 'Request failed.');
-    }
-
-    thinking.innerHTML = renderMarkdownLite(data.answer || 'No answer returned.');
-    if (data.conversationId) {
-      conversationId = data.conversationId;
-      localStorage.setItem('moe-conversation-id', conversationId);
-    }
-    history.push({ role: 'user', content: message });
-    history.push({ role: 'assistant', content: data.answer || '' });
-    saveHistory();
-    renderSources(data.citations || []);
   } catch (err) {
-    thinking.innerHTML = `<strong>Error:</strong> ${escapeHtml(err.message)}`;
-  } finally {
-    sendButton.disabled = false;
-    input.disabled = false;
-    input.focus();
+    healthBadge.textContent = "Offline";
+    healthBadge.className = "status-badge error";
   }
 }
 
-form.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const message = input.value.trim();
-  if (!message) return;
-  input.value = '';
-  sendMessage(message);
+async function sendMessage() {
+  const message = messageInput.value.trim();
+  if (!message || isSending) return;
+
+  isSending = true;
+  sendBtn.disabled = true;
+
+  addUserMessage(message);
+  messageInput.value = "";
+  autoResizeTextarea();
+  addTypingMessage();
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await res.json();
+    removeTypingMessage();
+
+    if (!res.ok) {
+      addAssistantMessage(
+        data?.details || data?.error || "Something went wrong while fetching the answer.",
+        "Error"
+      );
+      return;
+    }
+
+    addAssistantMessage(
+      data.answer || "No answer returned.",
+      data.provider ? `Source: ${data.provider}` : ""
+    );
+  } catch (error) {
+    removeTypingMessage();
+    addAssistantMessage(
+      "There was a connection problem while contacting the assistant. Please try again.",
+      "Connection error"
+    );
+  } finally {
+    isSending = false;
+    sendBtn.disabled = false;
+  }
+}
+
+clearBtn.addEventListener("click", () => {
+  chatMessages.innerHTML = `
+    <div class="message-row assistant">
+      <div class="avatar assistant-avatar">AI</div>
+      <div class="message-bubble assistant-bubble">
+        <div class="message-content">
+          <p>Hello, I’m ready.</p>
+          <p>Ask about totals, percentages, student counts, regional rankings, school indicators, or comparisons across the available MOE datasets.</p>
+        </div>
+      </div>
+    </div>
+  `;
 });
 
-input.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault();
-    form.dispatchEvent(new Event('submit'));
+sendBtn.addEventListener("click", sendMessage);
+
+messageInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
   }
 });
 
-document.querySelectorAll('[data-prompt]').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    input.value = btn.dataset.prompt;
-    input.focus();
+messageInput.addEventListener("input", autoResizeTextarea);
+
+promptButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    messageInput.value = btn.textContent.trim();
+    autoResizeTextarea();
+    messageInput.focus();
   });
 });
 
-clearChat.addEventListener('click', () => {
-  history = [];
-  conversationId = null;
-  localStorage.removeItem('moe-conversation-id');
-  saveHistory();
-  messagesEl.innerHTML = '';
-  addMessage('assistant', 'Chat cleared. Ask me a new MOE research question.');
-  renderSources([]);
-});
-
-loadConfig();
+checkHealth();
+autoResizeTextarea();
