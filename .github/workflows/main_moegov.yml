@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy Node.js app to Azure Web App - MOEgov
+name: Build and deploy Node.js app to Azure Web App - moegov
 
 on:
   push:
@@ -21,7 +21,13 @@ jobs:
       - name: Set up Node.js version
         uses: actions/setup-node@v3
         with:
-          node-version: '24.x'
+          node-version: '22.x'
+
+      - name: npm install, build, and test
+        run: |
+          npm install
+          npm run build --if-present
+          npm run test --if-present
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -45,15 +51,15 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_7444BE412F1A451EB8A1ED9D81F7F6E9 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_AB2AA3E12A4B4C769B74CEF4C38CA213 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_42092B4603944521908088741B203FD8 }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_040262540B6F40099505682E6EA046F3 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_7E2D7D19A6FB46BC8A0300F4C5777151 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_64802DE44FD941B497EF89395975FC86 }}
 
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'MOEgov'
+          app-name: 'moegov'
           slot-name: 'Production'
           package: .
           
