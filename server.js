@@ -175,6 +175,7 @@ async function callFabricTool(client, tool, args) {
         name: tool.name,
         arguments: args
       },
+      undefined,
       {
         timeout: MCP_CALL_TIMEOUT_MS
       }
@@ -191,7 +192,6 @@ async function callFabricTool(client, tool, args) {
     throw error;
   }
 }
-
 async function askFabricDataAgent(userQuestion) {
   const startedAt = Date.now();
 
