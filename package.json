@@ -1,5 +1,5 @@
 {
-  "name": "moe-fabric-data-agent-app",
+  "name": "Kateb - Alkhabeer",
   "version": "1.0.0",
   "description": "Public web app for MOE Fabric Data Agent",
   "type": "module",
@@ -9,12 +9,13 @@
     "dev": "node --watch server.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   },
   "dependencies": {
-    "@azure/identity": "^4.10.2",
-    "@modelcontextprotocol/sdk": "^1.18.1",
-    "dotenv": "^16.4.7",
-    "express": "^4.19.2"
+    "@azure/identity": "4.10.2",
+    "@modelcontextprotocol/sdk": "1.18.1",
+    "dotenv": "16.4.7",
+    "express": "4.19.2",
+    "zod": "3.25.76"
   }
 }
